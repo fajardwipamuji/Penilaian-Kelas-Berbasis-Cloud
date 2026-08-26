@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Penilaian SMK - Terpadu</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans">
+    
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect } = React;
+
+        // API URL DARI GOOGLE APPS SCRIPT ANDA
+        const API_URL = 'https://script.google.com/macros/s/AKfycbxSKYIFZzQUReQYEP4mNS6nOmrScYJuf9zGwQRLTZwX9BV9Youcczke_P0ZQuonYziD/exec';
+
+        const CATEGORIES = ['Praktik', 'Ulangan Harian', 'Tugas', 'PTS', 'PAS'];
+
+        function App() {
+            const [activeMenu, setActiveMenu] = useState('dashboard');
+            
+            // State untuk menampung data dari Spreadsheet
+            const [classes, setClasses] = useState([]);
+            const [subjects, setSubjects] = useState([]);
+            const [students, setStudents] = useState([]);
+            const [assessments, setAssessments] = useState([]);
+            const [grades, setGrades] = useState([]);
+            
+            const [isLoading, setIsLoading] = useState(true);
+            const [toast, setToast] = useState(null);
+
+            const showToast = (message, type = 'success') => {
+                setToast({ message, type });
+                setTimeout(() => setToast(null), 3000);
+            };
+
+            useEffect(() => {
+                fetchData();
+            }, []);
+
+            const fetchData = async () => {
+                setIsLoading(true);
+                try {
+                    const response = await fetch(API_URL);
+                    const data = await response.json();
+                    
+                    // Memasukkan data ke state (Fallback array kosong jika data belum ada)
+                    setClasses(data.kelas || []);
+                    setSubjects(data.mapel || []);
+                    setStudents(data.siswa || []);
+                    setAssessments(data.asesmen || []);
+                    setGrades(data.nilai || []);
+                    
+                } catch (error) {
+                    console.error("Error fetching data:", error);
+                    showToast('Gagal memuat data dari database. Periksa koneksi atau URL API.', 'error');
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            // Menampilkan layar loading saat mengambil data
+            if (isLoading) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+                        <i className="fa-solid fa-circle-notch fa-spin text-4xl text-blue-600 mb-4"></i>
+                        <h2 className="text-xl font-bold text-slate-700">Memuat Database...</h2>
+                        <p className="text-slate-500">Menghubungkan ke Google Sheets</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen flex flex-col md:flex-row">
+                    {/* SIDEBAR */}
+                    <aside className="w-full md:w-64 bg-slate-900 text-white flex-shrink-0 flex flex-col">
+                        <div className="p-4 border-b border-slate-700 flex items-center gap-3">
+                            <div className="bg-blue-500 w-10 h-10 flex items-center justify-center rounded-lg">
+                                <i className="fa-solid fa-book-open text-xl text-white"></i>
+                            </div>
+                            <div>
+                                <h1 className="font-bold text-lg leading-tight">SMK Bisa-Hebat</h1>
+                                <p className="text-xs text-slate-400">Aplikasi Penilaian Terpadu</p>
+                            </div>
+                        </div>
+                        <nav className="p-4 space-y-2 flex-grow">
+                            <MenuButton icon="fa-chart-pie" label="Dashboard" isActive={activeMenu === 'dashboard'} onClick={() => setActiveMenu('dashboard')} />
+                            <MenuButton icon="fa-file-lines" label="Input Nilai" isActive={activeMenu === 'input'} onClick={() => setActiveMenu('input')} />
+                            <MenuButton icon="fa-users" label="Rekap Kelas & Export" isActive={activeMenu === 'rekap'} onClick={() => setActiveMenu('rekap')} />
+                        </nav>
+                        <div className="p-4 border-t border-slate-700">
+                            <button onClick={fetchData} className="flex items-center gap-3 text-slate-400 hover:text-white transition-colors w-full p-2 text-left mb-2">
+                                <i className="fa-solid fa-rotate w-6 text-center"></i>
+                                <span>Muat Ulang Data</span>
+                            </button>
+                        </div>
+                    </aside>
+
+                    {/* MAIN CONTENT */}
+                    <main className="flex-grow p-4 md:p-8 overflow-y-auto max-w-full">
+                        {toast && (
+                            <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 text-white transition-opacity ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}>
+                                <i className={`fa-solid ${toast.type === 'success' ? 'fa-circle-check' : 'fa-triangle-exclamation'} text-xl`}></i>
+                                <span className="font-medium">{toast.message}</span>
+                            </div>
+                        )}
+
+                        {activeMenu === 'dashboard' && (
+                            <DashboardView 
+                                assessments={assessments} grades={grades} students={students} 
+                                classes={classes} subjects={subjects} onNavigate={setActiveMenu} 
+                            />
+                        )}
+                        {activeMenu === 'input' && (
+                            <InputNilaiView 
+                                assessments={assessments} setAssessments={setAssessments} 
+                                grades={grades} setGrades={setGrades} students={students} 
+                                classes={classes} subjects={subjects} showToast={showToast} 
+                            />
+                        )}
+                        {activeMenu === 'rekap' && (
+                            <RekapDetailView 
+                                assessments={assessments} grades={grades} students={students} 
+                                classes={classes} subjects={subjects} 
+                            />
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        function DashboardView({ assessments, grades, students, classes, subjects, onNavigate }) {
+            const getMissingGrades = useMemo(() => {
+                let missingList = [];
+                assessments.forEach(ass => {
+                    const classStudents = students.filter(s => s.classId == ass.classId);
+                    const subjectName = subjects.find(sub => sub.id == ass.subjectId)?.name || 'Mapel Tidak Diketahui';
+                    const className = classes.find(c => c.id == ass.classId)?.name || 'Kelas Tidak Diketahui';
+
+                    classStudents.forEach(student => {
+                        const gradeRecord = grades.find(g => g.assessmentId == ass.id && g.studentId == student.id);
+                        if (!gradeRecord || gradeRecord.score === null || gradeRecord.score === '') {
+                            missingList.push({
+                                studentName: student.name, className, subjectName,
+                                category: ass.category, chapterName: ass.chapterName, date: ass.date
+                            });
+                        }
+                    });
+                });
+                return missingList.sort((a, b) => new Date(b.date) - new Date(a.date));
+            }, [assessments, grades, students, classes, subjects]);
+
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <h2 className="text-2xl font-bold text-gray-800">Dashboard Utama</h2>
+                        <p className="text-gray-500">Ringkasan aktivitas akademik Anda hari ini.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <StatCard icon="fa-users text-blue-500" title="Total Siswa Terdaftar" value={students.length} />
+                        <StatCard icon="fa-book-open text-indigo-500" title="Kelas Diajar" value={classes.length} />
+                        <StatCard icon="fa-file-lines text-green-500" title="Materi Dinilai" value={assessments.length} />
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-sm border border-red-100 overflow-hidden mt-6">
+                        <div className="bg-red-50 p-4 border-b border-red-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-red-100 w-10 h-10 flex items-center justify-center rounded-full text-red-600">
+                                    <i className="fa-solid fa-bell text-lg"></i>
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-red-800 leading-tight">Radar Siswa Susulan</h3>
+                                    <p className="text-sm text-red-600">Ditemukan <strong className="text-red-800">{getMissingGrades.length}</strong> nilai kosong.</p>
+                                </div>
+                            </div>
+                            <button onClick={() => onNavigate('rekap')} className="hidden md:flex items-center gap-2 text-sm font-medium text-red-700 hover:text-red-900 bg-red-100/50 px-4 py-2 rounded-lg">
+                                Lihat Detail Rekap <i className="fa-solid fa-arrow-right"></i>
+                            </button>
+                        </div>
+
+                        {getMissingGrades.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm whitespace-nowrap">
+                                    <thead className="bg-gray-50 text-gray-600 font-semibold border-b">
+                                        <tr>
+                                            <th className="px-6 py-3 text-center w-10">No</th>
+                                            <th className="px-6 py-3">Siswa & Kelas</th>
+                                            <th className="px-6 py-3">Materi Tertinggal</th>
+                                            <th className="px-6 py-3">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {getMissingGrades.map((missing, idx) => (
+                                            <tr key={idx} className="hover:bg-red-50/30">
+                                                <td className="px-6 py-4 text-center text-gray-400">{idx + 1}</td>
+                                                <td className="px-6 py-4">
+                                                    <div className="font-bold text-gray-800">{missing.studentName}</div>
+                                                    <div className="text-xs text-gray-500 font-medium">{missing.className}</div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${missing.category === 'Praktik' ? 'bg-blue-100 text-blue-700' : 'bg-indigo-100 text-indigo-700'}`}>{missing.category}</span>
+                                                    </div>
+                                                    <div className="text-sm font-medium text-gray-700">{missing.chapterName}</div>
+                                                    <div className="text-xs text-gray-500 max-w-[200px] truncate">{missing.subjectName}</div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <button onClick={() => onNavigate('input')} className="text-blue-600 hover:text-blue-800 font-medium text-sm flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-100 transition-colors">
+                                                        <i className="fa-solid fa-file-lines text-sm"></i> Input Susulan
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <div className="p-8 text-center">
+                                <div className="text-green-500 mb-2 text-4xl"><i className="fa-solid fa-circle-check"></i></div>
+                                <p className="font-bold text-gray-800">Semua Nilai Lengkap!</p>
+                                <p className="text-sm text-gray-500">Jika data master masih kosong, silakan lengkapi di Google Sheets.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        function InputNilaiView({ assessments, setAssessments, grades, setGrades, students, classes, subjects, showToast }) {
+            const [form, setForm] = useState({ classId: '', subjectId: '', category: '', chapterName: '', date: new Date().toISOString().split('T')[0] });
+            const [activeSession, setActiveSession] = useState(null);
+            const [sessionScores, setSessionScores] = useState({});
+            const [isSaving, setIsSaving] = useState(false);
+
+            const existingChapters = useMemo(() => [...new Set(assessments.map(a => a.chapterName))], [assessments]);
+
+            const handleStartGrading = (e) => {
+                e.preventDefault();
+                const existingAssessment = assessments.find(
+                    a => a.classId == form.classId && a.subjectId == form.subjectId &&
+                        a.category === form.category && a.chapterName.toLowerCase() === form.chapterName.toLowerCase()
+                );
+                const classStudents = students.filter(s => s.classId == form.classId);
+                
+                const initialScores = {};
+                classStudents.forEach(student => {
+                    let existingScore = ''; let existingNote = '';
+                    if (existingAssessment) {
+                        const pastGrade = grades.find(g => g.assessmentId == existingAssessment.id && g.studentId == student.id);
+                        if (pastGrade) { existingScore = pastGrade.score ?? ''; existingNote = pastGrade.note ?? ''; }
+                    }
+                    initialScores[student.id] = { score: existingScore, note: existingNote };
+                });
+
+                setSessionScores(initialScores);
+                setActiveSession({ ...form, assessmentId: existingAssessment ? existingAssessment.id : null, students: classStudents });
+            };
+
+            const handleSaveGrades = async () => {
+                setIsSaving(true);
+                let currentAssessmentId = activeSession.assessmentId;
+                let newAssessmentData = null;
+
+                if (!currentAssessmentId) {
+                    currentAssessmentId = Date.now();
+                    newAssessmentData = {
+                        id: currentAssessmentId, classId: parseInt(activeSession.classId),
+                        subjectId: parseInt(activeSession.subjectId), category: activeSession.category,
+                        chapterName: activeSession.chapterName, date: activeSession.date
+                    };
+                }
+
+                let gradesToSave = [];
+                Object.keys(sessionScores).forEach(studentId => {
+                    const numStudentId = parseInt(studentId);
+                    const data = sessionScores[studentId];
+                    const existingGrade = grades.find(g => g.assessmentId == currentAssessmentId && g.studentId == numStudentId);
+                    
+                    gradesToSave.push({
+                        id: existingGrade ? existingGrade.id : Date.now() + Math.random(), // id unik sementara
+                        assessmentId: currentAssessmentId,
+                        studentId: numStudentId,
+                        score: data.score === '' ? null : parseFloat(data.score),
+                        note: data.note || ''
+                    });
+                });
+
+                // Siapkan payload untuk API
+                const payload = {
+                    action: 'saveGrade',
+                    newAssessment: newAssessmentData,
+                    grades: gradesToSave
+                };
+
+                try {
+                    // Kirim ke Google Apps Script
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'text/plain;charset=utf-8', // Hindari error preflight CORS
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.status === 'success' || result.status === 200) {
+                        // Update state lokal jika sukses
+                        if (newAssessmentData) {
+                            setAssessments([...assessments, newAssessmentData]);
+                        }
+                        
+                        let updatedGrades = [...grades];
+                        gradesToSave.forEach(newG => {
+                            const idx = updatedGrades.findIndex(g => g.assessmentId == newG.assessmentId && g.studentId == newG.studentId);
+                            if (idx >= 0) updatedGrades[idx] = newG;
+                            else updatedGrades.push(newG);
+                        });
+                        setGrades(updatedGrades);
+
+                        showToast('Nilai berhasil disimpan ke Spreadsheet!');
+                    } else {
+                        throw new Error('Server merespons tetapi status gagal');
+                    }
+                } catch (error) {
+                    console.error("Gagal save:", error);
+                    showToast('Gagal menyimpan ke Spreadsheet. Coba lagi.', 'error');
+                } finally {
+                    setIsSaving(false);
+                }
+            };
+
+            return (
+                <div className="space-y-6">
+                    <div className="flex justify-between items-center">
+                        <h2 className="text-2xl font-bold text-gray-800">Form Input Nilai</h2>
+                        {activeSession && <button onClick={() => setActiveSession(null)} className="bg-slate-200 hover:bg-slate-300 px-3 py-1.5 rounded-lg text-sm transition-colors">Tutup Sesi</button>}
+                    </div>
+
+                    <div className={`bg-white p-6 rounded-xl shadow-sm border border-gray-100 ${activeSession ? 'opacity-70 pointer-events-none' : ''}`}>
+                        {classes.length === 0 ? (
+                             <div className="text-center py-4 text-orange-600 font-medium border border-orange-200 bg-orange-50 rounded-lg">
+                                <i className="fa-solid fa-triangle-exclamation mr-2"></i>Data Master Kelas dan Mapel di Google Sheets masih kosong.
+                             </div>
+                        ) : (
+                        <form onSubmit={handleStartGrading} className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                            <div className="space-y-1">
+                                <label className="text-sm font-semibold">Kelas</label>
+                                <select required className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={form.classId} onChange={e => setForm({...form, classId: e.target.value})}>
+                                    <option value="">- Pilih -</option>
+                                    {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-sm font-semibold">Mapel</label>
+                                <select required className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={form.subjectId} onChange={e => setForm({...form, subjectId: e.target.value})}>
+                                    <option value="">- Pilih -</option>
+                                    {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-sm font-semibold">Kategori</label>
+                                <select required className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
+                                    <option value="">- Pilih -</option>
+                                    {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                </select>
+                            </div>
+                            <div className="space-y-1 md:col-span-2">
+                                <label className="text-sm font-semibold flex gap-2 items-center">Nama Materi <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">Ketik Bebas</span></label>
+                                <input required type="text" list="chapters" className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={form.chapterName} onChange={e => setForm({...form, chapterName: e.target.value})} placeholder="Contoh: Merakit PC" />
+                                <datalist id="chapters">{existingChapters.map((chap, i) => <option key={i} value={chap} />)}</datalist>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-sm font-semibold">Tanggal</label>
+                                <input required type="date" className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
+                            </div>
+                            <div className="md:col-span-3 pt-2">
+                                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-6 rounded-lg font-medium transition-colors shadow-sm">Mulai Penilaian</button>
+                            </div>
+                        </form>
+                        )}
+                    </div>
+
+                    {}
+                    {activeSession && (
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div className="bg-slate-50 p-4 border-b flex justify-between items-center">
+                                <h3 className="font-bold text-gray-800">Daftar Siswa - {activeSession.chapterName}</h3>
+                                <div className="text-xs bg-yellow-50 text-yellow-700 px-3 py-1 rounded-full border border-yellow-200">
+                                    <i className="fa-solid fa-circle-exclamation mr-1"></i> Kosongkan nilai jika absen
+                                </div>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm whitespace-nowrap">
+                                    <thead className="bg-gray-100 font-semibold border-b text-gray-600">
+                                        <tr>
+                                            <th className="px-4 py-3 w-12 text-center">No</th>
+                                            <th className="px-4 py-3">Nama</th>
+                                            <th className="px-4 py-3 w-32">Nilai</th>
+                                            <th className="px-4 py-3 w-full">Catatan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {activeSession.students.length > 0 ? activeSession.students.map((student, idx) => (
+                                            <tr key={student.id} className="hover:bg-blue-50/50">
+                                                <td className="px-4 py-3 text-center text-gray-500">{idx + 1}</td>
+                                                <td className="px-4 py-3 font-medium text-gray-800">{student.name}</td>
+                                                <td className="px-4 py-3">
+                                                    <input type="number" min="0" max="100" className="w-20 border rounded p-1.5 text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none" placeholder="-" value={sessionScores[student.id]?.score} onChange={e => setSessionScores(prev => ({...prev, [student.id]: {...prev[student.id], score: e.target.value}}))} disabled={isSaving} />
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <input type="text" className="w-full border rounded p-1.5 focus:ring-2 focus:ring-blue-500 outline-none" value={sessionScores[student.id]?.note} onChange={e => setSessionScores(prev => ({...prev, [student.id]: {...prev[student.id], note: e.target.value}}))} disabled={isSaving}/>
+                                                </td>
+                                            </tr>
+                                        )) : (
+                                            <tr><td colSpan="4" className="text-center py-4">Belum ada siswa di kelas ini.</td></tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="p-4 bg-gray-50 flex justify-end border-t">
+                                <button onClick={handleSaveGrades} disabled={isSaving || activeSession.students.length === 0} className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 shadow-sm transition-colors">
+                                    {isSaving ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-up"></i>}
+                                    {isSaving ? 'Menyimpan...' : 'Simpan ke Spreadsheet'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        function RekapDetailView({ assessments, grades, students, classes, subjects }) {
+            const [selectedClass, setSelectedClass] = useState('');
+            const [selectedSubject, setSelectedSubject] = useState('');
+
+            // Inisialisasi default filter jika data sudah ada
+            useEffect(() => {
+                if(classes.length > 0 && !selectedClass) setSelectedClass(classes[0].id);
+                if(subjects.length > 0 && !selectedSubject) setSelectedSubject(subjects[0].id);
+            }, [classes, subjects]);
+
+            const classStudents = students.filter(s => s.classId == selectedClass);
+            const relevantAssessments = assessments
+                .filter(a => a.classId == selectedClass && a.subjectId == selectedSubject)
+                .sort((a, b) => a.category.localeCompare(b.category));
+
+            const getScore = (studentId, assessmentId) => {
+                const g = grades.find(g => g.assessmentId == assessmentId && g.studentId == studentId);
+                return g && g.score !== null && g.score !== '' ? parseFloat(g.score) : null;
+            };
+
+            const calculateCategoryAverage = (studentId, categoryName) => {
+                const categoryAssessments = relevantAssessments.filter(a => a.category === categoryName);
+                if (categoryAssessments.length === 0) return 0;
+                let total = 0, count = 0;
+                categoryAssessments.forEach(ass => {
+                    const score = getScore(studentId, ass.id);
+                    if (score !== null) { total += score; count++; }
+                });
+                return count > 0 ? (total / count) : 0;
+            };
+
+            const downloadExcel = () => {
+                let csvContent = "data:text/csv;charset=utf-8,";
+                
+                let row1 = ["No", "NISN", "Nama Siswa"];
+                relevantAssessments.forEach(ass => row1.push(ass.category));
+                row1.push("Rata-rata Praktik", "Rata-rata Teori (UH+Tugas)", "Nilai Akhir (1:1)");
+                csvContent += row1.join(";") + "\r\n";
+
+                let row2 = ["", "", ""];
+                relevantAssessments.forEach(ass => row2.push(ass.chapterName));
+                row2.push("", "", "");
+                csvContent += row2.join(";") + "\r\n";
+
+                classStudents.forEach((student, index) => {
+                    let row = [index + 1, `="${student.nisn || ''}"`, student.name];
+                    relevantAssessments.forEach(ass => row.push(getScore(student.id, ass.id) !== null ? getScore(student.id, ass.id) : ""));
+                    
+                    const avgPraktik = calculateCategoryAverage(student.id, 'Praktik');
+                    const avgTugas = calculateCategoryAverage(student.id, 'Tugas');
+                    const avgUH = calculateCategoryAverage(student.id, 'Ulangan Harian');
+                    
+                    let avgTeori = 0;
+                    if (avgTugas > 0 && avgUH > 0) avgTeori = (avgTugas + avgUH)/2;
+                    else if (avgTugas > 0) avgTeori = avgTugas;
+                    else if (avgUH > 0) avgTeori = avgUH;
+
+                    const nilaiAkhir = (avgPraktik > 0 && avgTeori > 0) ? (avgPraktik + avgTeori)/2 : (avgPraktik || avgTeori || 0);
+
+                    row.push(
+                        avgPraktik > 0 ? avgPraktik.toFixed(1) : "-",
+                        avgTeori > 0 ? avgTeori.toFixed(1) : "-",
+                        nilaiAkhir > 0 ? nilaiAkhir.toFixed(1) : "-"
+                    );
+                    csvContent += row.join(";") + "\r\n";
+                });
+
+                const link = document.createElement("a");
+                link.setAttribute("href", encodeURI(csvContent));
+                link.setAttribute("download", `Rekap_Nilai.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            return (
+                <div className="space-y-6">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div>
+                            <h2 className="text-2xl font-bold text-gray-800">Rekapitulasi Nilai Detail</h2>
+                            <p className="text-gray-500">Melihat nilai rinci per materi dan kalkulasi akhir.</p>
+                        </div>
+                        <button onClick={downloadExcel} disabled={relevantAssessments.length === 0} className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm transition-colors">
+                            <i className="fa-solid fa-download"></i> Download CSV
+                        </button>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-xl border flex gap-4">
+                        <div className="flex-1">
+                            <label className="text-xs font-semibold text-gray-500 block mb-1">Pilih Kelas</label>
+                            <select className="w-full border rounded-md p-2 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={selectedClass} onChange={e => setSelectedClass(e.target.value)}>
+                                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex-1">
+                            <label className="text-xs font-semibold text-gray-500 block mb-1">Mata Pelajaran</label>
+                            <select className="w-full border rounded-md p-2 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)}>
+                                {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative">
+                        <div className="overflow-x-auto w-full pb-2">
+                            <table className="w-full text-left text-sm whitespace-nowrap table-fixed min-w-max">
+                                <thead>
+                                    <tr className="bg-slate-800 text-white">
+                                        <th rowSpan="2" className="px-4 py-2 border-r border-slate-700 w-12 sticky left-0 z-20 bg-slate-800 text-center">No</th>
+                                        <th rowSpan="2" className="px-4 py-2 border-r border-slate-700 w-48 sticky left-12 z-20 bg-slate-800">Nama Siswa</th>
+                                        {relevantAssessments.map(ass => (
+                                            <th key={`cat-${ass.id}`} className="px-4 py-2 border-r border-slate-700 text-center font-semibold text-xs text-slate-300">{ass.category}</th>
+                                        ))}
+                                        <th rowSpan="2" className="px-4 py-2 border-r border-slate-700 bg-slate-700 text-center w-28">Avg. Praktik</th>
+                                        <th rowSpan="2" className="px-4 py-2 border-r border-slate-700 bg-slate-700 text-center w-28 text-xs leading-tight">Avg. Teori<br/>(UH+Tugas)</th>
+                                        <th rowSpan="2" className="px-4 py-2 bg-blue-700 text-center w-32 font-bold text-yellow-300">Nilai Akhir<br/>(1:1)</th>
+                                    </tr>
+                                    <tr className="bg-slate-900 text-gray-200">
+                                        {relevantAssessments.map(ass => (
+                                            <th key={`bab-${ass.id}`} className="px-4 py-2 border-r border-slate-700 font-medium text-xs truncate max-w-[150px]" title={ass.chapterName}>{ass.chapterName}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                    {classStudents.length > 0 ? classStudents.map((student, index) => {
+                                        const avgPraktik = calculateCategoryAverage(student.id, 'Praktik');
+                                        const avgTugas = calculateCategoryAverage(student.id, 'Tugas');
+                                        const avgUH = calculateCategoryAverage(student.id, 'Ulangan Harian');
+                                        
+                                        let avgTeori = 0;
+                                        if (avgTugas > 0 && avgUH > 0) avgTeori = (avgTugas + avgUH)/2;
+                                        else if (avgTugas > 0) avgTeori = avgTugas;
+                                        else if (avgUH > 0) avgTeori = avgUH;
+
+                                        const nilaiAkhir = (avgPraktik > 0 && avgTeori > 0) ? (avgPraktik + avgTeori)/2 : (avgPraktik || avgTeori || 0);
+
+                                        return (
+                                            <tr key={student.id} className="hover:bg-blue-50/30">
+                                                <td className="px-4 py-3 border-r text-center sticky left-0 z-10 bg-white group-hover:bg-blue-50/50">{index + 1}</td>
+                                                <td className="px-4 py-3 border-r font-medium sticky left-12 z-10 bg-white shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group-hover:bg-blue-50/50">{student.name}</td>
+                                                {relevantAssessments.map(ass => {
+                                                    const score = getScore(student.id, ass.id);
+                                                    return (
+                                                        <td key={`score-${ass.id}-${student.id}`} className="px-4 py-3 border-r text-center">
+                                                            {score === null ? <span className="text-red-400 font-bold">-</span> : <span className="font-semibold text-gray-700">{score}</span>}
+                                                        </td>
+                                                    );
+                                                })}
+                                                <td className="px-4 py-3 border-r text-center font-bold text-blue-700 bg-slate-50/50">{avgPraktik > 0 ? avgPraktik.toFixed(1) : '-'}</td>
+                                                <td className="px-4 py-3 border-r text-center font-bold text-indigo-700 bg-slate-50/50">{avgTeori > 0 ? avgTeori.toFixed(1) : '-'}</td>
+                                                <td className="px-4 py-3 text-center font-bold text-lg bg-blue-50">
+                                                    {nilaiAkhir > 0 ? <span className={nilaiAkhir < 75 ? 'text-red-600' : 'text-green-700'}>{nilaiAkhir.toFixed(1)}</span> : '-'}
+                                                </td>
+                                            </tr>
+                                        )
+                                    }) : (
+                                        <tr><td colSpan={6 + relevantAssessments.length} className="text-center py-4 text-gray-500">Pilih kelas yang memiliki data siswa.</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function MenuButton({ icon, label, isActive, onClick }) {
+            return (
+                <button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all text-left ${isActive ? 'bg-blue-600 text-white font-medium shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
+                    <i className={`fa-solid ${icon} text-lg w-6 text-center`}></i>
+                    <span>{label}</span>
+                </button>
+            );
+        }
+
+        function StatCard({ icon, title, value }) {
+            return (
+                <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
+                    <div className="p-3 bg-gray-50 w-12 h-12 flex items-center justify-center rounded-lg">
+                        <i className={`fa-solid ${icon} text-2xl`}></i>
+                    </div>
+                    <div>
+                        <p className="text-sm text-gray-500 font-medium">{title}</p>
+                        <p className="text-2xl font-bold text-gray-800">{value}</p>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+    </script>
+</body>
+</html>
