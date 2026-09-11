@@ -27,7 +27,6 @@
         function App() {
             const [activeMenu, setActiveMenu] = useState('dashboard');
             
-            // State untuk menampung data dari Spreadsheet
             const [classes, setClasses] = useState([]);
             const [subjects, setSubjects] = useState([]);
             const [students, setStudents] = useState([]);
@@ -42,9 +41,7 @@
                 setTimeout(() => setToast(null), 3000);
             };
 
-            useEffect(() => {
-                fetchData();
-            }, []);
+            useEffect(() => { fetchData(); }, []);
 
             const fetchData = async () => {
                 setIsLoading(true);
@@ -52,7 +49,6 @@
                     const response = await fetch(API_URL);
                     const data = await response.json();
                     
-                    // Memasukkan data ke state (Fallback array kosong jika data belum ada)
                     setClasses(data.kelas || []);
                     setSubjects(data.mapel || []);
                     setStudents(data.siswa || []);
@@ -61,13 +57,12 @@
                     
                 } catch (error) {
                     console.error("Error fetching data:", error);
-                    showToast('Gagal memuat data dari database. Periksa koneksi atau URL API.', 'error');
+                    showToast('Gagal memuat data dari database. Periksa koneksi.', 'error');
                 } finally {
                     setIsLoading(false);
                 }
             };
 
-            // Menampilkan layar loading saat mengambil data
             if (isLoading) {
                 return (
                     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
@@ -94,7 +89,7 @@
                         <nav className="p-4 space-y-2 flex-grow">
                             <MenuButton icon="fa-chart-pie" label="Dashboard" isActive={activeMenu === 'dashboard'} onClick={() => setActiveMenu('dashboard')} />
                             <MenuButton icon="fa-file-lines" label="Input Nilai" isActive={activeMenu === 'input'} onClick={() => setActiveMenu('input')} />
-                            <MenuButton icon="fa-users" label="Rekap Kelas & Export" isActive={activeMenu === 'rekap'} onClick={() => setActiveMenu('rekap')} />
+                            <MenuButton icon="fa-users" label="Rekap & Export" isActive={activeMenu === 'rekap'} onClick={() => setActiveMenu('rekap')} />
                         </nav>
                         <div className="p-4 border-t border-slate-700">
                             <button onClick={fetchData} className="flex items-center gap-3 text-slate-400 hover:text-white transition-colors w-full p-2 text-left mb-2">
@@ -113,25 +108,9 @@
                             </div>
                         )}
 
-                        {activeMenu === 'dashboard' && (
-                            <DashboardView 
-                                assessments={assessments} grades={grades} students={students} 
-                                classes={classes} subjects={subjects} onNavigate={setActiveMenu} 
-                            />
-                        )}
-                        {activeMenu === 'input' && (
-                            <InputNilaiView 
-                                assessments={assessments} setAssessments={setAssessments} 
-                                grades={grades} setGrades={setGrades} students={students} 
-                                classes={classes} subjects={subjects} showToast={showToast} 
-                            />
-                        )}
-                        {activeMenu === 'rekap' && (
-                            <RekapDetailView 
-                                assessments={assessments} grades={grades} students={students} 
-                                classes={classes} subjects={subjects} 
-                            />
-                        )}
+                        {activeMenu === 'dashboard' && <DashboardView assessments={assessments} grades={grades} students={students} classes={classes} subjects={subjects} onNavigate={setActiveMenu} />}
+                        {activeMenu === 'input' && <InputNilaiView assessments={assessments} setAssessments={setAssessments} grades={grades} setGrades={setGrades} students={students} classes={classes} subjects={subjects} showToast={showToast} />}
+                        {activeMenu === 'rekap' && <RekapDetailView assessments={assessments} grades={grades} students={students} classes={classes} subjects={subjects} />}
                     </main>
                 </div>
             );
@@ -146,8 +125,16 @@
                     const className = classes.find(c => c.id == ass.classId)?.name || 'Kelas Tidak Diketahui';
 
                     classStudents.forEach(student => {
-                        const gradeRecord = grades.find(g => g.assessmentId == ass.id && g.studentId == student.id);
-                        if (!gradeRecord || gradeRecord.score === null || gradeRecord.score === '') {
+                        // LOGIKA BARU: Cari SELURUH riwayat nilai anak di materi ini
+                        const studentGrades = grades.filter(g => g.assessmentId == ass.id && g.studentId == student.id);
+                        let hasValidScore = false;
+                        
+                        studentGrades.forEach(g => {
+                            if (g.score !== null && g.score !== '') hasValidScore = true;
+                        });
+
+                        // Jika dari semua riwayat tidak ada satupun yang punya nilai (angka)
+                        if (!hasValidScore) {
                             missingList.push({
                                 studentName: student.name, className, subjectName,
                                 category: ass.category, chapterName: ass.chapterName, date: ass.date
@@ -253,12 +240,31 @@
                 
                 const initialScores = {};
                 classStudents.forEach(student => {
-                    let existingScore = ''; let existingNote = '';
+                    let bestScore = ''; let bestNote = '';
+                    
                     if (existingAssessment) {
-                        const pastGrade = grades.find(g => g.assessmentId == existingAssessment.id && g.studentId == student.id);
-                        if (pastGrade) { existingScore = pastGrade.score ?? ''; existingNote = pastGrade.note ?? ''; }
+                        // LOGIKA BARU: Cari riwayat nilai TERTINGGI untuk form input ini
+                        const pastGrades = grades.filter(g => g.assessmentId == existingAssessment.id && g.studentId == student.id);
+                        if (pastGrades.length > 0) {
+                            let max = -1;
+                            pastGrades.forEach(g => {
+                                if (g.score !== null && g.score !== '') {
+                                    const num = parseFloat(g.score);
+                                    if (num > max) {
+                                        max = num;
+                                        bestNote = g.note || '';
+                                    }
+                                }
+                            });
+                            
+                            if (max > -1) {
+                                bestScore = max;
+                            } else {
+                                bestNote = pastGrades[pastGrades.length - 1].note || '';
+                            }
+                        }
                     }
-                    initialScores[student.id] = { score: existingScore, note: existingNote };
+                    initialScores[student.id] = { score: bestScore, note: bestNote };
                 });
 
                 setSessionScores(initialScores);
@@ -286,7 +292,7 @@
                     const existingGrade = grades.find(g => g.assessmentId == currentAssessmentId && g.studentId == numStudentId);
                     
                     gradesToSave.push({
-                        id: existingGrade ? existingGrade.id : Date.now() + Math.random(), // id unik sementara
+                        id: existingGrade ? existingGrade.id : Date.now() + Math.random(), 
                         assessmentId: currentAssessmentId,
                         studentId: numStudentId,
                         score: data.score === '' ? null : parseFloat(data.score),
@@ -294,27 +300,18 @@
                     });
                 });
 
-                // Siapkan payload untuk API
-                const payload = {
-                    action: 'saveGrade',
-                    newAssessment: newAssessmentData,
-                    grades: gradesToSave
-                };
+                const payload = { action: 'saveGrade', newAssessment: newAssessmentData, grades: gradesToSave };
 
                 try {
-                    // Kirim ke Google Apps Script
                     const response = await fetch(API_URL, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'text/plain;charset=utf-8', // Hindari error preflight CORS
-                        },
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify(payload)
                     });
                     
                     const result = await response.json();
                     
                     if (result.status === 'success' || result.status === 200) {
-                        // Update state lokal jika sukses
                         if (newAssessmentData) {
                             setAssessments([...assessments, newAssessmentData]);
                         }
@@ -390,7 +387,6 @@
                         )}
                     </div>
 
-                    {}
                     {activeSession && (
                         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                             <div className="bg-slate-50 p-4 border-b flex justify-between items-center">
@@ -443,7 +439,6 @@
             const [selectedClass, setSelectedClass] = useState('');
             const [selectedSubject, setSelectedSubject] = useState('');
 
-            // Inisialisasi default filter jika data sudah ada
             useEffect(() => {
                 if(classes.length > 0 && !selectedClass) setSelectedClass(classes[0].id);
                 if(subjects.length > 0 && !selectedSubject) setSelectedSubject(subjects[0].id);
@@ -454,9 +449,22 @@
                 .filter(a => a.classId == selectedClass && a.subjectId == selectedSubject)
                 .sort((a, b) => a.category.localeCompare(b.category));
 
+            // LOGIKA BARU: Cari nilai Tertinggi (Math.max) jika ada data ganda
             const getScore = (studentId, assessmentId) => {
-                const g = grades.find(g => g.assessmentId == assessmentId && g.studentId == studentId);
-                return g && g.score !== null && g.score !== '' ? parseFloat(g.score) : null;
+                const studentGrades = grades.filter(g => g.assessmentId == assessmentId && g.studentId == studentId);
+                if (studentGrades.length === 0) return null;
+                
+                let maxScore = null;
+                studentGrades.forEach(g => {
+                    if (g.score !== null && g.score !== '') {
+                        const numScore = parseFloat(g.score);
+                        if (maxScore === null || numScore > maxScore) {
+                            maxScore = numScore;
+                        }
+                    }
+                });
+                
+                return maxScore;
             };
 
             const calculateCategoryAverage = (studentId, categoryName) => {
@@ -519,7 +527,7 @@
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div>
                             <h2 className="text-2xl font-bold text-gray-800">Rekapitulasi Nilai Detail</h2>
-                            <p className="text-gray-500">Melihat nilai rinci per materi dan kalkulasi akhir.</p>
+                            <p className="text-gray-500">Melihat nilai rinci (Otomatis mengambil nilai tertinggi per materi).</p>
                         </div>
                         <button onClick={downloadExcel} disabled={relevantAssessments.length === 0} className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm transition-colors">
                             <i className="fa-solid fa-download"></i> Download CSV
