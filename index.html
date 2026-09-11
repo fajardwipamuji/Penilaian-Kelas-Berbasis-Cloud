@@ -75,7 +75,6 @@
 
             return (
                 <div className="min-h-screen flex flex-col md:flex-row">
-                    {/* SIDEBAR */}
                     <aside className="w-full md:w-64 bg-slate-900 text-white flex-shrink-0 flex flex-col">
                         <div className="p-4 border-b border-slate-700 flex items-center gap-3">
                             <div className="bg-blue-500 w-10 h-10 flex items-center justify-center rounded-lg">
@@ -99,7 +98,6 @@
                         </div>
                     </aside>
 
-                    {/* MAIN CONTENT */}
                     <main className="flex-grow p-4 md:p-8 overflow-y-auto max-w-full">
                         {toast && (
                             <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 text-white transition-opacity ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}>
@@ -125,7 +123,6 @@
                     const className = classes.find(c => c.id == ass.classId)?.name || 'Kelas Tidak Diketahui';
 
                     classStudents.forEach(student => {
-                        // LOGIKA BARU: Cari SELURUH riwayat nilai anak di materi ini
                         const studentGrades = grades.filter(g => g.assessmentId == ass.id && g.studentId == student.id);
                         let hasValidScore = false;
                         
@@ -133,7 +130,6 @@
                             if (g.score !== null && g.score !== '') hasValidScore = true;
                         });
 
-                        // Jika dari semua riwayat tidak ada satupun yang punya nilai (angka)
                         if (!hasValidScore) {
                             missingList.push({
                                 studentName: student.name, className, subjectName,
@@ -214,7 +210,7 @@
                             <div className="p-8 text-center">
                                 <div className="text-green-500 mb-2 text-4xl"><i className="fa-solid fa-circle-check"></i></div>
                                 <p className="font-bold text-gray-800">Semua Nilai Lengkap!</p>
-                                <p className="text-sm text-gray-500">Jika data master masih kosong, silakan lengkapi di Google Sheets.</p>
+                                <p className="text-sm text-gray-500">Bagus, tidak ada tugas susulan yang tertinggal.</p>
                             </div>
                         )}
                     </div>
@@ -227,48 +223,63 @@
             const [activeSession, setActiveSession] = useState(null);
             const [sessionScores, setSessionScores] = useState({});
             const [isSaving, setIsSaving] = useState(false);
+            
+            // FITUR BARU: Toggle untuk memilih materi lama vs materi baru
+            const [isNewChapter, setIsNewChapter] = useState(false);
 
-            const existingChapters = useMemo(() => [...new Set(assessments.map(a => a.chapterName))], [assessments]);
+            // Filter Daftar Materi yang Relevan sesuai Kelas, Mapel, Kategori yang dipilih
+            const relevantChapters = useMemo(() => {
+                if (!form.classId || !form.subjectId || !form.category) return [];
+                return assessments.filter(a => 
+                    a.classId == form.classId && 
+                    a.subjectId == form.subjectId && 
+                    a.category === form.category
+                );
+            }, [assessments, form.classId, form.subjectId, form.category]);
+
+            // Reset Input Materi jika Kelas/Mapel/Kategori diubah
+            const handleContextChange = (field, value) => {
+                setForm(prev => ({ ...prev, [field]: value, chapterName: '' }));
+            };
 
             const handleStartGrading = (e) => {
                 e.preventDefault();
+                
+                if (!form.chapterName.trim()) {
+                    showToast('Nama Materi tidak boleh kosong!', 'error');
+                    return;
+                }
+
                 const existingAssessment = assessments.find(
                     a => a.classId == form.classId && a.subjectId == form.subjectId &&
-                        a.category === form.category && a.chapterName.toLowerCase() === form.chapterName.toLowerCase()
+                        a.category === form.category && a.chapterName.toLowerCase() === form.chapterName.trim().toLowerCase()
                 );
-                const classStudents = students.filter(s => s.classId == form.classId);
                 
+                const classStudents = students.filter(s => s.classId == form.classId);
                 const initialScores = {};
+                
                 classStudents.forEach(student => {
                     let bestScore = ''; let bestNote = '';
                     
                     if (existingAssessment) {
-                        // LOGIKA BARU: Cari riwayat nilai TERTINGGI untuk form input ini
                         const pastGrades = grades.filter(g => g.assessmentId == existingAssessment.id && g.studentId == student.id);
                         if (pastGrades.length > 0) {
                             let max = -1;
                             pastGrades.forEach(g => {
                                 if (g.score !== null && g.score !== '') {
                                     const num = parseFloat(g.score);
-                                    if (num > max) {
-                                        max = num;
-                                        bestNote = g.note || '';
-                                    }
+                                    if (num > max) { max = num; bestNote = g.note || ''; }
                                 }
                             });
-                            
-                            if (max > -1) {
-                                bestScore = max;
-                            } else {
-                                bestNote = pastGrades[pastGrades.length - 1].note || '';
-                            }
+                            if (max > -1) { bestScore = max; } 
+                            else { bestNote = pastGrades[pastGrades.length - 1].note || ''; }
                         }
                     }
                     initialScores[student.id] = { score: bestScore, note: bestNote };
                 });
 
                 setSessionScores(initialScores);
-                setActiveSession({ ...form, assessmentId: existingAssessment ? existingAssessment.id : null, students: classStudents });
+                setActiveSession({ ...form, chapterName: form.chapterName.trim(), assessmentId: existingAssessment ? existingAssessment.id : null, students: classStudents });
             };
 
             const handleSaveGrades = async () => {
@@ -312,9 +323,7 @@
                     const result = await response.json();
                     
                     if (result.status === 'success' || result.status === 200) {
-                        if (newAssessmentData) {
-                            setAssessments([...assessments, newAssessmentData]);
-                        }
+                        if (newAssessmentData) setAssessments([...assessments, newAssessmentData]);
                         
                         let updatedGrades = [...grades];
                         gradesToSave.forEach(newG => {
@@ -325,63 +334,96 @@
                         setGrades(updatedGrades);
 
                         showToast('Nilai berhasil disimpan ke Spreadsheet!');
-                    } else {
-                        throw new Error('Server merespons tetapi status gagal');
-                    }
+                    } else { throw new Error('Server merespons tetapi status gagal'); }
                 } catch (error) {
                     console.error("Gagal save:", error);
                     showToast('Gagal menyimpan ke Spreadsheet. Coba lagi.', 'error');
-                } finally {
-                    setIsSaving(false);
-                }
+                } finally { setIsSaving(false); }
             };
 
             return (
                 <div className="space-y-6">
                     <div className="flex justify-between items-center">
-                        <h2 className="text-2xl font-bold text-gray-800">Form Input Nilai</h2>
+                        <h2 className="text-2xl font-bold text-gray-800">Form Input & Edit Nilai</h2>
                         {activeSession && <button onClick={() => setActiveSession(null)} className="bg-slate-200 hover:bg-slate-300 px-3 py-1.5 rounded-lg text-sm transition-colors">Tutup Sesi</button>}
                     </div>
 
                     <div className={`bg-white p-6 rounded-xl shadow-sm border border-gray-100 ${activeSession ? 'opacity-70 pointer-events-none' : ''}`}>
                         {classes.length === 0 ? (
                              <div className="text-center py-4 text-orange-600 font-medium border border-orange-200 bg-orange-50 rounded-lg">
-                                <i className="fa-solid fa-triangle-exclamation mr-2"></i>Data Master Kelas dan Mapel di Google Sheets masih kosong.
+                                <i className="fa-solid fa-triangle-exclamation mr-2"></i>Data Master di Google Sheets masih kosong.
                              </div>
                         ) : (
                         <form onSubmit={handleStartGrading} className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                            
+                            {/* Baris 1: Konteks */}
                             <div className="space-y-1">
                                 <label className="text-sm font-semibold">Kelas</label>
-                                <select required className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={form.classId} onChange={e => setForm({...form, classId: e.target.value})}>
+                                <select required className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={form.classId} onChange={e => handleContextChange('classId', e.target.value)}>
                                     <option value="">- Pilih -</option>
                                     {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                 </select>
                             </div>
                             <div className="space-y-1">
                                 <label className="text-sm font-semibold">Mapel</label>
-                                <select required className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={form.subjectId} onChange={e => setForm({...form, subjectId: e.target.value})}>
+                                <select required className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={form.subjectId} onChange={e => handleContextChange('subjectId', e.target.value)}>
                                     <option value="">- Pilih -</option>
                                     {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
                             </div>
                             <div className="space-y-1">
                                 <label className="text-sm font-semibold">Kategori</label>
-                                <select required className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
+                                <select required className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={form.category} onChange={e => handleContextChange('category', e.target.value)}>
                                     <option value="">- Pilih -</option>
                                     {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                 </select>
                             </div>
+
+                            {/* Baris 2: Nama Materi & Tanggal */}
                             <div className="space-y-1 md:col-span-2">
-                                <label className="text-sm font-semibold flex gap-2 items-center">Nama Materi <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">Ketik Bebas</span></label>
-                                <input required type="text" list="chapters" className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={form.chapterName} onChange={e => setForm({...form, chapterName: e.target.value})} placeholder="Contoh: Merakit PC" />
-                                <datalist id="chapters">{existingChapters.map((chap, i) => <option key={i} value={chap} />)}</datalist>
+                                <label className="text-sm font-semibold flex justify-between items-center">
+                                    Nama Materi 
+                                    <button 
+                                        type="button" 
+                                        onClick={() => { setIsNewChapter(!isNewChapter); setForm({...form, chapterName: ''}); }} 
+                                        className={`text-xs px-2.5 py-1 rounded-md border font-medium transition-colors ${isNewChapter ? 'bg-slate-100 text-slate-700 border-slate-300' : 'bg-blue-100 text-blue-700 border-blue-200'}`}
+                                    >
+                                        {isNewChapter ? <><i className="fa-solid fa-list mr-1"></i> Pilih dari daftar</> : <><i className="fa-solid fa-plus mr-1"></i> Buat Baru</>}
+                                    </button>
+                                </label>
+                                
+                                {isNewChapter ? (
+                                    <input required type="text" className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 border-blue-300" value={form.chapterName} onChange={e => setForm({...form, chapterName: e.target.value})} placeholder="Ketik nama materi baru..." />
+                                ) : (
+                                    <select 
+                                        required 
+                                        className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" 
+                                        value={form.chapterName} 
+                                        onChange={e => {
+                                            const selected = relevantChapters.find(a => a.chapterName === e.target.value);
+                                            setForm({...form, chapterName: e.target.value, date: selected ? selected.date : form.date});
+                                        }}
+                                    >
+                                        <option value="">- Pilih Materi yang Sudah Diinput -</option>
+                                        {relevantChapters.map(ass => (
+                                            <option key={ass.id} value={ass.chapterName}>{ass.chapterName} (Tgl: {ass.date})</option>
+                                        ))}
+                                    </select>
+                                )}
+                                
+                                {!isNewChapter && relevantChapters.length === 0 && form.classId && form.subjectId && form.category && (
+                                    <p className="text-xs text-orange-600 mt-1"><i className="fa-solid fa-info-circle"></i> Belum ada materi. Silakan klik tombol "Buat Baru" di atas.</p>
+                                )}
                             </div>
                             <div className="space-y-1">
                                 <label className="text-sm font-semibold">Tanggal</label>
                                 <input required type="date" className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
                             </div>
+                            
                             <div className="md:col-span-3 pt-2">
-                                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-6 rounded-lg font-medium transition-colors shadow-sm">Mulai Penilaian</button>
+                                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-6 rounded-lg font-medium transition-colors shadow-sm">
+                                    <i className="fa-solid fa-magnifying-glass mr-2"></i> Muat & Mulai Penilaian
+                                </button>
                             </div>
                         </form>
                         )}
@@ -390,9 +432,12 @@
                     {activeSession && (
                         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                             <div className="bg-slate-50 p-4 border-b flex justify-between items-center">
-                                <h3 className="font-bold text-gray-800">Daftar Siswa - {activeSession.chapterName}</h3>
-                                <div className="text-xs bg-yellow-50 text-yellow-700 px-3 py-1 rounded-full border border-yellow-200">
-                                    <i className="fa-solid fa-circle-exclamation mr-1"></i> Kosongkan nilai jika absen
+                                <div>
+                                    <h3 className="font-bold text-gray-800">Daftar Siswa</h3>
+                                    <p className="text-xs text-gray-500 font-medium">Materi: {activeSession.chapterName}</p>
+                                </div>
+                                <div className="text-xs bg-yellow-50 text-yellow-700 px-3 py-1.5 rounded-full border border-yellow-200">
+                                    <i className="fa-solid fa-circle-exclamation mr-1"></i> Kosongkan nilai jika belum dikerjakan
                                 </div>
                             </div>
                             <div className="overflow-x-auto">
@@ -400,9 +445,9 @@
                                     <thead className="bg-gray-100 font-semibold border-b text-gray-600">
                                         <tr>
                                             <th className="px-4 py-3 w-12 text-center">No</th>
-                                            <th className="px-4 py-3">Nama</th>
-                                            <th className="px-4 py-3 w-32">Nilai</th>
-                                            <th className="px-4 py-3 w-full">Catatan</th>
+                                            <th className="px-4 py-3">Nama Lengkap</th>
+                                            <th className="px-4 py-3 w-32 text-center">Nilai Terbaik</th>
+                                            <th className="px-4 py-3 w-full">Catatan Guru</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
@@ -410,15 +455,15 @@
                                             <tr key={student.id} className="hover:bg-blue-50/50">
                                                 <td className="px-4 py-3 text-center text-gray-500">{idx + 1}</td>
                                                 <td className="px-4 py-3 font-medium text-gray-800">{student.name}</td>
-                                                <td className="px-4 py-3">
-                                                    <input type="number" min="0" max="100" className="w-20 border rounded p-1.5 text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none" placeholder="-" value={sessionScores[student.id]?.score} onChange={e => setSessionScores(prev => ({...prev, [student.id]: {...prev[student.id], score: e.target.value}}))} disabled={isSaving} />
+                                                <td className="px-4 py-3 text-center">
+                                                    <input type="number" min="0" max="100" className="w-20 border rounded-lg p-1.5 text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all" placeholder="-" value={sessionScores[student.id]?.score} onChange={e => setSessionScores(prev => ({...prev, [student.id]: {...prev[student.id], score: e.target.value}}))} disabled={isSaving} />
                                                 </td>
                                                 <td className="px-4 py-3">
-                                                    <input type="text" className="w-full border rounded p-1.5 focus:ring-2 focus:ring-blue-500 outline-none" value={sessionScores[student.id]?.note} onChange={e => setSessionScores(prev => ({...prev, [student.id]: {...prev[student.id], note: e.target.value}}))} disabled={isSaving}/>
+                                                    <input type="text" className="w-full border rounded-lg p-1.5 focus:ring-2 focus:ring-blue-500 outline-none transition-all" placeholder="Opsional..." value={sessionScores[student.id]?.note} onChange={e => setSessionScores(prev => ({...prev, [student.id]: {...prev[student.id], note: e.target.value}}))} disabled={isSaving}/>
                                                 </td>
                                             </tr>
                                         )) : (
-                                            <tr><td colSpan="4" className="text-center py-4">Belum ada siswa di kelas ini.</td></tr>
+                                            <tr><td colSpan="4" className="text-center py-6 text-gray-500">Belum ada siswa terdaftar di kelas ini.</td></tr>
                                         )}
                                     </tbody>
                                 </table>
@@ -426,7 +471,7 @@
                             <div className="p-4 bg-gray-50 flex justify-end border-t">
                                 <button onClick={handleSaveGrades} disabled={isSaving || activeSession.students.length === 0} className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 shadow-sm transition-colors">
                                     {isSaving ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-up"></i>}
-                                    {isSaving ? 'Menyimpan...' : 'Simpan ke Spreadsheet'}
+                                    {isSaving ? 'Menyimpan Data...' : 'Simpan Perubahan ke Excel'}
                                 </button>
                             </div>
                         </div>
@@ -449,7 +494,6 @@
                 .filter(a => a.classId == selectedClass && a.subjectId == selectedSubject)
                 .sort((a, b) => a.category.localeCompare(b.category));
 
-            // LOGIKA BARU: Cari nilai Tertinggi (Math.max) jika ada data ganda
             const getScore = (studentId, assessmentId) => {
                 const studentGrades = grades.filter(g => g.assessmentId == assessmentId && g.studentId == studentId);
                 if (studentGrades.length === 0) return null;
@@ -463,7 +507,6 @@
                         }
                     }
                 });
-                
                 return maxScore;
             };
 
